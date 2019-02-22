@@ -4,40 +4,44 @@ import ssl
 from pathlib import Path
 
 import fastjsonschema
-import yaml
-from neo4j.v1 import basic_auth, TRUST_ON_FIRST_USE
+from neo4j.v1 import TRUST_ON_FIRST_USE, basic_auth
 
-ENV = os.getenv("DEPC_ENV", "dev")
+from depc import create_app
+
 HOME = os.getenv("DEPC_HOME", str(Path(__file__).resolve().parents[2]))
-
 SCHEMAS_PATH = str(Path(HOME) / "consumer" / "schemas.json")
-CONFIG_PATH = str(Path(HOME) / "depc.{}.yml".format(ENV))
+DEFINITIONS_PATH = str(Path(HOME) / "consumer" / "definitions.json")
 
-# Load the DepC config YAML file
-with open(CONFIG_PATH, "r") as config_file:
-    CONFIG = yaml.load(config_file)
-    CONSUMER_CONFIG = CONFIG["CONSUMER"]
+
+app = create_app(environment=os.getenv("DEPC_ENV") or "dev")
+
 
 # Load the JSON schemas to support flat and nested messages
-with open(SCHEMAS_PATH, "r") as schemas_file:
-    schemas = json.load(schemas_file)
+with open(SCHEMAS_PATH, "r") as f_schemas, open(DEFINITIONS_PATH, "r") as f_defs:
+    schemas = json.load(f_schemas)
+    definitions = json.load(f_defs)
+
+    # Add the definitions in each schema
+    schemas["flat"].update(definitions)
+    schemas["nested"].update(definitions)
+
     validate_flat_message = fastjsonschema.compile(schemas["flat"])
     validate_nested_message = fastjsonschema.compile(schemas["nested"])
 
 
 # Kafka configuration
 KAFKA_CONFIG = {
-    "bootstrap_servers": CONSUMER_CONFIG["kafka"]["hosts"],
+    "bootstrap_servers": app.config["CONSUMER"]["kafka"]["hosts"],
     "security_protocol": "SASL_SSL",
     "sasl_mechanism": "PLAIN",
-    "sasl_plain_username": CONSUMER_CONFIG["kafka"]["username"],
-    "sasl_plain_password": CONSUMER_CONFIG["kafka"]["password"],
+    "sasl_plain_username": app.config["CONSUMER"]["kafka"]["username"],
+    "sasl_plain_password": app.config["CONSUMER"]["kafka"]["password"],
     "ssl_context": ssl.SSLContext(ssl.PROTOCOL_SSLv23),
     "ssl_check_hostname": False,
-    "client_id": CONSUMER_CONFIG["kafka"]["client_id"],
-    "group_id": CONSUMER_CONFIG["kafka"]["group_id"],
+    "client_id": app.config["CONSUMER"]["kafka"]["client_id"],
+    "group_id": app.config["CONSUMER"]["kafka"]["group_id"],
     "value_deserializer": lambda m: json.loads(m.decode("utf-8")),
-    "max_poll_records": CONSUMER_CONFIG["kafka"]["batch_size"],
+    "max_poll_records": app.config["CONSUMER"]["kafka"]["batch_size"],
     "auto_offset_reset": "earliest",
     "enable_auto_commit": False,
 }
@@ -45,8 +49,10 @@ KAFKA_CONFIG = {
 
 # Graph database configuration
 NEO4J_CONFIG = {
-    "uri": CONFIG["NEO4J"]["uri"],
-    "auth": basic_auth(CONFIG["NEO4J"]["username"], CONFIG["NEO4J"]["password"]),
+    "uri": app.config["NEO4J"]["uri"],
+    "auth": basic_auth(
+        app.config["NEO4J"]["username"], app.config["NEO4J"]["password"]
+    ),
     "encrypted": False,
     "trust": TRUST_ON_FIRST_USE,
 }
