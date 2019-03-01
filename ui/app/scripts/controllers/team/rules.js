@@ -22,7 +22,6 @@ angular.module('depcwebuiApp')
     this.interval = null;
     this.result = null;
     this.checksOrder = 'name';
-    self.rulePromise = null;
 
     self.loadingVariables = false;
     self.variables = [];
@@ -192,20 +191,8 @@ angular.module('depcwebuiApp')
         $location.search('end', end);
         $location.search('exec', 1);
 
-        var rule = rulesService.executeRule(self.team.id, self.selectedRule.id, self.name, start, end).then(function(response) {
-            var result = response.data.result;
-
-            // Don't wait if cache exists
-            self.checkResult(result);
-
-            self.rulePromise = $interval(function() {
-                self.checkResult(result);
-            }, 1000);
-
-            // Cancel any pending timer
-            $scope.$on("$destroy", function () {
-                $interval.cancel(self.rulePromise);
-            });
+        rulesService.executeRule(self.team.id, self.selectedRule.id, self.name, start, end).then(function(response) {
+            self.checkResult(response.data.result);
         });
     };
 
@@ -214,70 +201,62 @@ angular.module('depcwebuiApp')
     }
 
     this.checkResult = function(result) {
-        rulesService.getResult(result, 'asc', 1000).then(function(response) {
-            var result = response.data.qos;
+        var logs = result.logs;
+        var tmpLogs = self.logs;
+        tmpLogs.push(logs);
 
-            var logs = response.data.logs;
-            var tmpLogs = self.logs;
-            tmpLogs.push(logs);
+        self.logs = _.uniq(_.flatten(tmpLogs), function (log) {
+            return log.message._id;
+        });
 
-            self.logs = _.uniq(_.flatten(tmpLogs), function (log) {
-                return log.message._id;
-            });
+        var stats = {'ok': 0, 'warning': 0, 'critical': 0, 'unknown': 0}
 
-            // Stop the loop, we have our QOS
-            if ( result && result.qos != undefined ) {
-                var stats = {'ok': 0, 'warning': 0, 'critical': 0, 'unknown': 0}
+        // Handle each check
+        for ( var i in result.qos.checks ) {
+            var check = result.qos.checks[i];
 
-                // Handle each check
-                for ( var i in result.checks ) {
-                    var check = result.checks[i];
+            // Statistics (Ok, Warning, Critical, Unknown)
+            if ( check.qos == null ) {
+                stats['unknown'] += 1;
+            } else {
+                stats[config.getStateByQos(check.qos)] += 1;
+            }
 
-                    // Statistics (Ok, Warning, Critical, Unknown)
-                    if ( check.qos == null ) {
-                        stats['unknown'] += 1;
-                    } else {
-                        stats[config.getStateByQos(check.qos)] += 1;
-                    }
+            // Add the chart for each check
+            if ( check.timeseries != undefined && check.timeseries.length > 0 ) {
+                var chartData = [];
+                var ts = check.timeseries[0];
+                for ( var dp in  ts.dps) {
+                    var val = Number(ts.dps[dp].toFixed(3));
+                    chartData.push([dp * 1000, val]);
+                }
 
-                    // Add the chart for each check
-                    if ( check.timeseries != undefined && check.timeseries.length > 0 ) {
-                        var chartData = [];
-                        var ts = check.timeseries[0];
-                        for ( var dp in  ts.dps) {
-                            var val = Number(ts.dps[dp].toFixed(3));
-                            chartData.push([dp * 1000, val]);
-                        }
+                var metric = ts.metric;
+                var tags = JSON.stringify(ts.tags);
 
-                        var metric = ts.metric;
-                        var tags = JSON.stringify(ts.tags);
-
-                        // Group the false periods
-                        var keys = Object.keys(check.bools_dps);
-                        var bands = [];
-                        for (var j = 0; j < keys.length-1; j++) {
-                          var val = check.bools_dps[keys[j]];
-                          if (!val) {
-                            bands.push({
-                              color: '#ff7272',
-                              from: keys[j] * 1000,
-                              to: keys[j+1] * 1000
-                            });
-                          }
-                        }
-
-                        var lineChart = chartsService.getCheckChart(115, metric + tags, chartData, bands);
-                        result.checks[i]['chart'] = lineChart;
+                // Group the false periods
+                var keys = Object.keys(check.bools_dps);
+                var bands = [];
+                for (var j = 0; j < keys.length-1; j++) {
+                    var val = check.bools_dps[keys[j]];
+                    if (!val) {
+                    bands.push({
+                        color: '#ff7272',
+                        from: keys[j] * 1000,
+                        to: keys[j+1] * 1000
+                    });
                     }
                 }
 
-                // All checks are done
-                self.chartData = [stats['ok'], stats['warning'], stats['critical'], stats['unknown']];
-                self.result = result;
-                $interval.cancel(self.rulePromise);
-                self.ruleExecuting = false;
+                var lineChart = chartsService.getCheckChart(115, metric + tags, chartData, bands);
+                result.qos.checks[i]['chart'] = lineChart;
             }
-        });
+        }
+
+        // All checks are done
+        self.chartData = [stats['ok'], stats['warning'], stats['critical'], stats['unknown']];
+        self.result = result;
+        self.ruleExecuting = false;
     };
 
     this.getCheckResult = function(check) {

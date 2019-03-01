@@ -1,17 +1,6 @@
 import logging
 from logging import config
 
-import celery.signals
-
-
-@celery.signals.setup_logging.connect
-def setup_logging(*args, **kwargs):
-    """Hack to prevent Celery from messing with loggers.
-
-    See https://github.com/celery/celery/issues/1867
-    """
-    pass
-
 
 def setup_loggers(app):
     """Setup loggers for a production environment"""

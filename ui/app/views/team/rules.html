@@ -99,8 +99,8 @@
 												'critical': 'images/panel-critical.png'}">
 												<img ng-src="{{ images[rulesCtrl.getPanel('key')] }}" alt="{{ rulesCtrl.getPanel('key') }}"/>
 												<h4>
-													<abbr data-ng-if="rulesCtrl.result.qos != 'unknown'" class="help underlined-black" popover-trigger="'mouseenter'" uib-popover-html="'This QOS is computed from the checks datapoints : every bad ticks in all checks are reported in the whole rule (we use the AND operation).'">{{ rulesCtrl.result.qos }}%</abbr>
-													<span data-ng-if="rulesCtrl.result.qos == 'unknown'">Unknown</span>
+													<abbr data-ng-if="rulesCtrl.result.qos.qos != 'unknown'" class="help underlined-black" popover-trigger="'mouseenter'" uib-popover-html="'This QOS is computed from the checks datapoints : every bad ticks in all checks are reported in the whole rule (we use the AND operation).'">{{ rulesCtrl.result.qos.qos }}%</abbr>
+													<span data-ng-if="rulesCtrl.result.qos.qos == 'unknown'">Unknown</span>
 												</h4>
 											</div>
 										</div>
@@ -114,7 +114,7 @@
 										<div class="btn-group-vertical" style="margin-top: 25px;">
 											<button class="btn btn-default btn-sm" data-ng-click="rulesCtrl.logsEnableDebug()" data-ng-class="rulesCtrl.logsDebugEnabled ? 'active' : ''" type="button"><i class="glyphicon glyphicon-console"></i> Show debug logs</button>
 									        <button class="btn btn-default btn-sm" data-ng-click="rulesCtrl.logsExpanded = !rulesCtrl.logsExpanded"><i class="glyphicon" data-ng-class="rulesCtrl.logsExpanded ? 'glyphicon-chevron-up' : 'glyphicon-chevron-down'"></i> {{ rulesCtrl.logsExpanded ? 'Reduce the logs' : 'Expand the logs' }}</button>
-											<button data-ng-if="rulesCtrl.result.qos != 'unknown'" data-ng-click="rulesCtrl.changeOrder()" class="btn btn-default btn-sm" data-ng-class="rulesCtrl.checksOrder == 'weight' ? 'active' : ''"><i class="glyphicon glyphicon-sort-by-order"></i> Sort checks by QOS</button>
+											<button data-ng-if="rulesCtrl.result.qos.qos != 'unknown'" data-ng-click="rulesCtrl.changeOrder()" class="btn btn-default btn-sm" data-ng-class="rulesCtrl.checksOrder == 'weight' ? 'active' : ''"><i class="glyphicon glyphicon-sort-by-order"></i> Sort checks by QOS</button>
 										</div>
 									</div>
 								</div>
@@ -141,10 +141,10 @@
 			</div>
 
 			<div class="panel panel-default panel-depc" data-ng-if="rulesCtrl.selectedRule">
-				<div class="panel-body" data-ng-if="rulesCtrl.result && rulesCtrl.result.qos !== 'unknown'">
+				<div class="panel-body" data-ng-if="rulesCtrl.result.qos && rulesCtrl.result.qos.qos !== 'unknown'">
 					<table class="table">
 						<tbody>
-							<tr data-ng-repeat="check in rulesCtrl.result.checks" ng-class="{'no-top-border':$first}">
+							<tr data-ng-repeat="check in rulesCtrl.result.qos.checks" ng-class="{'no-top-border':$first}">
 								<td class="col-sm-2">
 									<div class="check-card">
 										<div class="check-card-title"><strong>{{ check.name }}</strong></div>
@@ -168,7 +168,7 @@
 						</tbody>
 					</table>
 				</div>
-				<div class="panel-body" data-ng-if="(!rulesCtrl.result && rulesCtrl.selectedRule.checks.length && !rulesCtrl.ruleExecuting) || rulesCtrl.result.qos == 'unknown'">
+				<div class="panel-body" data-ng-if="(!rulesCtrl.result.qos && rulesCtrl.selectedRule.checks.length && !rulesCtrl.ruleExecuting) || rulesCtrl.result.qos.qos == 'unknown'">
 					<table class="table table-stripped">
 						<thead>
 							<tr>

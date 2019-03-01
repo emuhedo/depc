@@ -1,9 +1,12 @@
+import asyncio
+import uuid
+
 from flask import current_app as app
 from flask import json
 
 from depc.controllers import (
-    Controller,
     AlreadyExistError,
+    Controller,
     NotFoundError,
     RequirementsNotSatisfiedError,
 )
@@ -11,7 +14,7 @@ from depc.controllers.checks import CheckController
 from depc.extensions import db, redis
 from depc.models.checks import Check
 from depc.models.rules import Rule
-from depc.tasks.rules import execute_async_rule, execute_sync_rule
+from depc.tasks.rules import execute_asyncio_rule
 
 
 class BoolsDpsDecoder(json.JSONDecoder):
@@ -72,27 +75,15 @@ class RuleController(Controller):
                 extra={"result_key": result_key},
             )
 
-            # Synchronous calls : checks are launched sequentially and the
-            # result of the rule is directly sent.
-            if sync:
-                return execute_sync_rule(
-                    rule_id=rule_id,
-                    rule_checks=[check.id for check in rule.checks],
-                    result_key=result_key,
-                    logger=app.logger,
-                    kwargs=kwargs,
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(
+                execute_asyncio_rule(
+                    loop=loop, rule=rule, key=result_key, kwargs=kwargs
                 )
-
-            # Asynchronous way : returns a result ID. A Celery task execute
-            # the rule and the client must poll the /results/<ID> endpoint
-            # to have the complete result.
-            cls.schedule_task(
-                execute_async_rule,
-                rule_id=rule_id,
-                rule_checks=[check.id for check in rule.checks],
-                result_key=result_key,
-                kwargs=kwargs,
             )
+
+        # Cache already exists
         else:
             app.logger.warning(
                 "Cache already exists for the rule '{0}'".format(rule.name),
@@ -103,11 +94,21 @@ class RuleController(Controller):
                 extra={"result_key": result_key},
             )
 
-            if sync:
-                result = redis.get(result_key)
-                return json.loads(result, cls=BoolsDpsDecoder)
+        return cls.get_rule_result(result_key)
 
-        return result_key
+    @classmethod
+    def get_rule_result(cls, key):
+        result = json.loads(redis.get(key))
+
+        def format_log(log):
+            log["_id"] = uuid.uuid4().hex
+            return {"message": log}
+
+        data = {"logs": [format_log(l) for l in result["logs"]]}
+        if "qos" in result:
+            data["qos"] = result
+
+        return data
 
     @classmethod
     def update(cls, data, filters):
